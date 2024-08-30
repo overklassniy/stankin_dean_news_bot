@@ -14,6 +14,23 @@ bot = telebot.TeleBot(TOKEN)
 bot_id = bot.get_me().id
 
 
+# Обработчик команды /code
+@bot.message_handler(commands=['code'])
+def handle_code_command(message: telebot.types.Message) -> None:
+    """
+    Обрабатывает команду /code и отправляет ссылку на GitHub репозиторий.
+
+    Args:
+        message (telebot.types.Message): Сообщение, содержащее команду /code.
+    """
+    github_link = "https://github.com/overklassniy/stankin_dean_news_bot"
+    try:
+        bot.send_message(message.chat.id, f"Исходный код бота доступен на GitHub: {github_link}")
+        logger.info(f"Sent GitHub link to {message.chat.id}")
+    except Exception as e:
+        logger.error(f"Error sending GitHub link to {message.chat.id}: {e}")
+
+
 # Обработчик личных сообщений
 @bot.message_handler(func=lambda message: message.chat.type == 'private')
 def handle_private_message(message: telebot.types.Message) -> None:
