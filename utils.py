@@ -125,8 +125,9 @@ def send_news_to_groups(bot: telebot.TeleBot, news_list: list) -> None:
     """
     for news in news_list:
         news_url = f'https://stankin.ru/news/item_{news["id"]}'
+        # в json ответе дата представлена в формате YYYY-MM-DD 00:00:00+03, так как в деканате часы, минуты и секунды не пишут, то и нам они не нужны
         news_date = news['date'].split()[0]
-        news_date = '.'.join(news_date.split('-')[::-1])
+        news_date = '.'.join(news_date.split('-')[::-1])  # приводим формат даты из YYYY-MM-DD в DD-MM-YYYY
         message = f"[{news['title']}]({news_url})\n\n🗓 {news_date}"
         for chat_id in groups:
             try:
