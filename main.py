@@ -1,8 +1,10 @@
 import os
 import threading
 import time
-from dotenv import load_dotenv
+
 import telebot
+from dotenv import load_dotenv
+
 from utils import fetch_news, send_news_to_groups, save_json_file, logger, groups, config
 
 # Загрузка переменных окружения

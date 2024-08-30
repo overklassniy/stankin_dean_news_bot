@@ -1,10 +1,10 @@
 import json
 import logging
 import os
-import requests
 from datetime import datetime
 from typing import Union
 
+import requests
 import telebot
 
 
@@ -79,6 +79,14 @@ def save_json_file(file_path: str, data: Union[dict, list]) -> None:
         file_path (str): Путь к JSON файлу.
         data (dict | list): Данные для сохранения.
     """
+    # Получаем директорию из пути к файлу
+    directory = os.path.dirname(file_path)
+
+    # Проверяем, существует ли директория, и создаем её, если нет
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # Сохраняем данные в JSON файл
     with open(file_path, 'w') as f:
         json.dump(data, f)
 
