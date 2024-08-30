@@ -41,8 +41,8 @@
     ```json
     {
         "LOGS_DIR": "logs",
-        "GROUPS_FILE": "groups.json",
-        "LAST_NEWS_ID_FILE": "last_news_id.json",
+        "GROUPS_FILE": "data/groups.json",
+        "LAST_NEWS_ID_FILE": "data/last_news_id.json",
         "DEFAULT_LAST_NEWS_ID": 3404,
         "URL": "https://stankin.ru/api_entry.php",
         "HEADERS": {
@@ -106,12 +106,13 @@ python main.py
 .
 ├── images/
 │   └── stankin.jpg          # Изображение для отправки с новостями
+├── data/
+│   └── groups.json          # Файл с ID групп (создается автоматически)
+│   └── last_news_id.json    # Файл с последним ID новости (создается автоматически)
 ├── logs/                    # Логи работы бота
 ├── main.py                  # Основной файл для запуска бота
 ├── utils.py                 # Утилиты и вспомогательные функции
 ├── config.json              # Конфигурационный файл
-├── groups.json              # Файл с ID групп (создается автоматически)
-├── last_news_id.json        # Файл с последним ID новости (создается автоматически)
 ├── .env                     # Файл для переменных окружения
 ├── requirements.txt         # Список зависимостей
 └── README.md                # Документация
