@@ -1,9 +1,9 @@
 import asyncio
 import os
 
-from aiogram import Bot, Dispatcher, types, F, Router
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ChatType
-from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER, JOIN_TRANSITION, LEAVE_TRANSITION
+from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION, LEAVE_TRANSITION
 from aiogram.types import BotCommand, ChatMemberUpdated
 from dotenv import load_dotenv
 
@@ -14,8 +14,6 @@ load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
 
 dp = Dispatcher()
-# router = Router()
-# dp.include_router(router)
 
 # Идентификатор бота
 bot_id = None
