@@ -120,5 +120,5 @@ python main.py
 
 - [Python](https://www.python.org/downloads/) - Используемый язык программирования
 - [aiogram](https://github.com/aiogram/aiogram) - Фреймворк для асинхронной работы с Telegram Bot API
-- [requests](https://pypi.org/project/requests/) - Библиотека для HTTP-запросов
+- [aiohttp](https://github.com/aio-libs/aiohttp) - Библиотека для асинхронных HTTP-запросов
 - [python-dotenv](https://pypi.org/project/python-dotenv/) - Библиотека для работы с переменными окружения
