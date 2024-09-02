@@ -4,8 +4,9 @@ import os
 from datetime import datetime
 from typing import Union
 
-import requests
-import telebot
+import aiohttp
+from aiogram import Bot
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 # Подгрузка конфигураций из config.json
@@ -92,57 +93,63 @@ def save_json_file(file_path: str, data: Union[dict, list]) -> None:
 
 
 # Глобальные переменные
-groups = set(load_json_file(config['GROUPS_FILE'], default_value=[]))
-last_news_id = load_json_file(config['LAST_NEWS_ID_FILE'], {'last_news_id': config['DEFAULT_LAST_NEWS_ID']})['last_news_id']
+groups = load_json_file(config['GROUPS_FILE'], default_value=[])
+last_news_id = load_json_file(config['LAST_NEWS_ID_FILE'], {'last_news_id': 0})['last_news_id']
 
 
-# Функция для получения новостей
-def fetch_news() -> list:
+# Асинхронная функция для получения новостей
+async def fetch_news() -> list:
     """
-    Получает список новостей с указанного URL, сравнивая их с последним сохранённым ID новости.
+    Асинхронно получает список новостей с указанного URL, сравнивая их с последним сохранённым ID новости.
 
     Returns:
         list: Список новостей, которые имеют ID больше, чем последний сохранённый ID.
     """
     global last_news_id
     try:
-        with requests.Session() as session:
-            response = session.post(config['URL'], headers=config['HEADERS'], json=config['DATA'])
-            response.raise_for_status()
-            news = response.json()['data']['news']
-            new_news = [item for item in news if last_news_id is None or item['id'] > last_news_id]
-            if new_news:
-                last_news_id = max(item['id'] for item in new_news)
-                save_json_file(config['LAST_NEWS_ID_FILE'], {'last_news_id': last_news_id})
-                logger.info(f"Fetched {len(new_news)} new news items.")
-                return new_news
-            logger.info("No new news found.")
-    except requests.RequestException as e:
+        async with aiohttp.ClientSession() as session:
+            request_params = config['REQUEST']
+
+            async with session.post(request_params['URL'], headers=request_params['HEADERS'], json=request_params['DATA']) as response:
+                response.raise_for_status()
+                news = (await response.json())['data']['news']
+                new_news = [item for item in news if last_news_id is None or item['id'] > last_news_id]
+                if new_news:
+                    last_news_id = max(item['id'] for item in new_news)
+                    save_json_file(config['LAST_NEWS_ID_FILE'], {'last_news_id': last_news_id})
+                    logger.info(f"Fetched {len(new_news)} new news items.")
+                    return new_news
+                logger.info("No new news found.")
+    except aiohttp.ClientError as e:
         logger.error(f"Error fetching news: {e}")
     return []
 
 
-# Функция для отправки новостей в группы
-def send_news_to_groups(bot: telebot.TeleBot, news_list: list) -> None:
+# Асинхронная функция для отправки новостей в группы
+async def send_news_to_groups(bot: Bot, news_list: list) -> None:
     """
-    Отправляет список новостей в Telegram группы.
+    Асинхронно отправляет список новостей в Telegram группы.
 
     Args:
-        bot (telebot.TeleBot): Объект Telegram-бота для отправки сообщений.
+        bot (Bot): Объект Telegram-бота для отправки сообщений.
         news_list (list): Список новостей для отправки.
     """
     for news in news_list:
+        news_title = news['title']
         news_url = f'https://stankin.ru/news/item_{news["id"]}'
         # в json ответе дата представлена в формате YYYY-MM-DD 00:00:00+03, так как в деканате часы, минуты и секунды не пишут, то и нам они не нужны
         news_date = news['date'].split()[0]
         news_date = '.'.join(news_date.split('-')[::-1])  # приводим формат даты из YYYY-MM-DD в DD-MM-YYYY
-        message = f"[{news['title']}]({news_url})\n\n🗓 {news_date}"
+        message = (
+            f'<a href="{news_url}"><b>{news_title}</b></a>\n\n'
+            f'🗓 {news_date}'
+        )
+        # message = f"** [{news_title}]({news_url}) **\n\n🗓 > {news_date}"
         for chat_id in groups:
             try:
-                with open(config['NEWS_IMAGE_PATH'], 'rb') as stankin_photo:
-                    read_kb = telebot.types.InlineKeyboardMarkup()
-                    read_kb.add(telebot.types.InlineKeyboardButton('Прочитать', url=news_url))
-                    bot.send_photo(chat_id, stankin_photo, caption=message, parse_mode='Markdown', reply_markup=read_kb)
-                    logger.info(f"Sent news to group {chat_id}: {news['title']}")
+                stankin_image_url = config['NEWS_IMAGE_URL']
+                read_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Прочитать', url=news_url)]])
+                await bot.send_photo(chat_id, stankin_image_url, caption=message, parse_mode='HTML', reply_markup=read_kb)
+                logger.info(f"Sent news to group {chat_id}: {news_title}")
             except Exception as e:
                 logger.error(f"Error sending message to group {chat_id}: {e}")
