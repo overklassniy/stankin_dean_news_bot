@@ -55,7 +55,7 @@ async def handle_private_message(message: types.Message) -> None:
 
 # Обработчик добавления бота в группу
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
-async def bot_added(event: ChatMemberUpdated):
+async def bot_added(event: ChatMemberUpdated) -> None:
     """
     Добавляет чат в список рассылки, если бот был добавлен в группу.
 
@@ -75,7 +75,7 @@ async def bot_added(event: ChatMemberUpdated):
 
 
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
-async def bot_kicked(event: ChatMemberUpdated):
+async def bot_kicked(event: ChatMemberUpdated) -> None:
     """
     Удаляет чат из списка рассылки, если бот был удалён из группы.
 
