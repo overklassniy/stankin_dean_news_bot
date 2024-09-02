@@ -1,3 +1,6 @@
+### Вы находитесь в устаревшей ветке!
+*Эта ветка более не поддерживается, ввиду отказа от [pyTelegramBotAPI](https://github.com/eternnoir/pyTelegramBotAPI) в пользу [aiogram](https://github.com/aiogram/aiogram). Пожалуйста, обратитесь к [актуальной ветке](https://github.com/overklassniy/stankin_dean_news_bot/tree/master).*
+
 # СТАНКИН Новости деканата
 
 Этот Telegram бот автоматически получает и отправляет новости в указанные группы из API сайта МГТУ "СТАНКИН". Бот периодически проверяет наличие новых новостей и отправляет их в Telegram группы, к которым он присоединен.
@@ -122,6 +125,6 @@ python main.py
 ## Технологии
 
 - [Python](https://www.python.org/downloads/) - Используемый язык программирования
-- [PyTelegramBotAPI](https://github.com/eternnoir/pyTelegramBotAPI) - API для работы с Telegram Bot API
+- [pyTelegramBotAPI](https://github.com/eternnoir/pyTelegramBotAPI) - API для работы с Telegram Bot API
 - [requests](https://pypi.org/project/requests/) - Библиотека для HTTP-запросов
 - [python-dotenv](https://pypi.org/project/python-dotenv/) - Библиотека для работы с переменными окружения
