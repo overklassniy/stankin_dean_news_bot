@@ -149,7 +149,10 @@ async def send_news_to_groups(bot: Bot, news_list: list) -> None:
             try:
                 stankin_image_url = config['NEWS_IMAGE_URL']
                 read_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Прочитать', url=news_url)]])
-                await bot.send_photo(chat_id, stankin_image_url, caption=message, parse_mode='HTML', reply_markup=read_kb)
+                if isinstance(chat_id, list):
+                    await bot.send_photo(chat_id=chat_id[0], message_thread_id=chat_id[1], photo=stankin_image_url, caption=message, parse_mode='HTML', reply_markup=read_kb)
+                else:
+                    await bot.send_photo(chat_id, stankin_image_url, caption=message, parse_mode='HTML', reply_markup=read_kb)
                 logger.info(f"Sent news to group {chat_id}: {news_title}")
             except Exception as e:
                 logger.error(f"Error sending message to group {chat_id}: {e}")
