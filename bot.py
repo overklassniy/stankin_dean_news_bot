@@ -30,8 +30,9 @@ async def handle_code_command(message: types.Message) -> None:
     """
     github_link = "https://github.com/overklassniy/stankin_dean_news_bot"
     try:
-        await message.answer(f"Исходный код бота доступен на GitHub: {github_link}")
-        logger.info(f"Sent GitHub link to {message.chat.id}")
+        if message.chat.type == 'private':
+            await message.answer(f"Исходный код бота доступен на GitHub: {github_link}")
+            logger.info(f"Sent GitHub link to {message.chat.id}")
     except Exception as e:
         logger.error(f"Error sending GitHub link to {message.chat.id}: {e}")
 
@@ -45,7 +46,7 @@ async def handle_private_message(message: types.Message) -> None:
     Args:
         message (types.Message): Сообщение, полученное ботом.
     """
-    response_text = "Привет, пока у меня нет функционала в личных сообщениях. Добавьте меня в любую группу, чтобы получать актуальные новости!"
+    response_text = "Привет, пока у меня нет функционала в личных сообщениях. Добавьте меня в любую группу, чтобы получать актуальные новости!\nЕсли Вам интересен мой исходный код – используйте команду /code !"
     try:
         await message.answer(response_text)
         logger.info(f"Sent private message to {message.chat.id}")
