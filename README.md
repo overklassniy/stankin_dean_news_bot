@@ -44,13 +44,13 @@
         "GROUPS_FILE": "data/groups.json",
         "LAST_NEWS_ID_FILE": "data/last_news_id.json",
         "REQUEST": {
-        "URL": "https://stankin.ru/api_entry.php",
+        "URL": "https://old.stankin.ru/api_entry.php",
         "HEADERS": {
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json;charset=UTF-8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "Origin": "https://stankin.ru",
-            "Referer": "https://stankin.ru/subdivisions/id_125/news_1"
+            "Origin": "https://old.stankin.ru",
+            "Referer": "https://old.stankin.ru/subdivisions/id_125/news_1"
         },
         "DATA": {
             "action": "getNews",
