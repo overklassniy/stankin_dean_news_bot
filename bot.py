@@ -234,10 +234,13 @@ async def migrate_data_if_needed() -> None:
         # Переименовываем старые файлы
         for file_path in [groups_file, last_news_file]:
             path = Path(file_path)
-            if path.exists():
-                backup_path = path.with_suffix('.json.bak')
-                path.rename(backup_path)
-                logger.info(f"Файл {file_path} переименован в {backup_path}")
+            if path.exists() and path.suffix == '.json':
+                backup_path = path.with_name(path.name + '.bak')
+                try:
+                    path.rename(backup_path)
+                    logger.info(f"Файл {file_path} переименован в {backup_path}")
+                except Exception as e:
+                    logger.warning(f"Не удалось переименовать {file_path}: {e}")
 
 
 async def main() -> None:

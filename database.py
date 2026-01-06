@@ -367,27 +367,47 @@ async def migrate_from_json(groups_file: str, last_news_file: str, db_path: Opti
     groups_path = Path(groups_file)
     if groups_path.exists():
         try:
-            with open(groups_path, 'r') as f:
-                groups = json.load(f)
+            # Пробуем разные кодировки
+            content = None
+            for encoding in ['utf-8', 'utf-8-sig', 'cp1251', 'latin-1']:
+                try:
+                    with open(groups_path, 'r', encoding=encoding) as f:
+                        content = f.read()
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if content is None:
+                logger.error(f"Не удалось прочитать {groups_file} ни в одной кодировке")
+                return
+            
+            groups = json.loads(content)
             
             async with aiosqlite.connect(path) as db:
+                migrated_count = 0
                 for group in groups:
-                    if isinstance(group, list):
-                        # Формат [chat_id, topic_id]
-                        chat_id, topic_id = group[0], group[1]
-                        await db.execute(
-                            "INSERT OR IGNORE INTO groups (chat_id, topic_id, is_supergroup) VALUES (?, ?, TRUE)",
-                            (chat_id, topic_id)
-                        )
-                    else:
-                        # Просто chat_id
-                        await db.execute(
-                            "INSERT OR IGNORE INTO groups (chat_id) VALUES (?)",
-                            (group,)
-                        )
+                    try:
+                        if isinstance(group, list):
+                            # Формат [chat_id, topic_id]
+                            chat_id, topic_id = group[0], group[1]
+                            await db.execute(
+                                "INSERT OR IGNORE INTO groups (chat_id, topic_id, is_supergroup) VALUES (?, ?, TRUE)",
+                                (chat_id, topic_id)
+                            )
+                        else:
+                            # Просто chat_id
+                            await db.execute(
+                                "INSERT OR IGNORE INTO groups (chat_id) VALUES (?)",
+                                (group,)
+                            )
+                        migrated_count += 1
+                    except Exception as e:
+                        logger.warning(f"Ошибка миграции группы {group}: {e}")
                 await db.commit()
             
-            logger.info(f"Мигрировано {len(groups)} групп из {groups_file}")
+            logger.info(f"Мигрировано {migrated_count} групп из {groups_file}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка парсинга JSON в {groups_file}: {e}")
         except Exception as e:
             logger.error(f"Ошибка при миграции групп: {e}")
     
@@ -395,7 +415,7 @@ async def migrate_from_json(groups_file: str, last_news_file: str, db_path: Opti
     last_news_path = Path(last_news_file)
     if last_news_path.exists():
         try:
-            with open(last_news_path, 'r') as f:
+            with open(last_news_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             last_id = data.get('last_news_id', 0)
