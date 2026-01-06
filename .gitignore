@@ -1,0 +1,34 @@
+# Переменные окружения
+.env
+
+# Настройки
+config.json
+
+# База данных
+data/bot.db
+
+# Логи
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backup файлы миграции
+*.json.bak
+data
+
+# OS
+.DS_Store
+Thumbs.db
