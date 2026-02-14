@@ -1,6 +1,8 @@
 # Переменные окружения
 .env
 
+Dockerfile
+
 # Настройки
 config.json
 
