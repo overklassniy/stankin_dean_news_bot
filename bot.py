@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ChatType
 from aiogram.filters import Command, ChatMemberUpdatedFilter, JOIN_TRANSITION, LEAVE_TRANSITION
 from aiogram.types import BotCommand, ChatMemberUpdated
@@ -23,9 +25,35 @@ from utils import fetch_news, send_news_to_groups, logger, config
 # Загрузка переменных окружения
 load_dotenv()
 TOKEN = os.getenv('BOT_TOKEN')
+NEWS_RSS_URL = os.getenv('NEWS_RSS_URL')
+PROXY_URL = os.getenv('PROXY_URL', '').strip() or None
+BOT_API_BASE_URL = os.getenv('BOT_API_BASE_URL', '').strip() or None
+
+# MTProto: прокси в формате mtproto://host:port:secret (требуется локальный Bot API сервер)
+def _is_mtproto_proxy(url: str | None) -> bool:
+    """
+    Определяет, задан ли прокси в формате MTProto.
+
+    Для MTProto нужен отдельный Bot API сервер (например TDLight), запросы к нему
+    идут через BOT_API_BASE_URL; сам URL прокси в коде бота не используется для соединения.
+
+    Args:
+        url: Строка из PROXY_URL (может быть None).
+
+    Returns:
+        True, если url непустой и начинается с "mtproto://" (без учёта регистра).
+    """
+    if not url:
+        return False
+    return url.lower().startswith('mtproto://')
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN не найден в переменных окружения. Создайте файл .env с BOT_TOKEN=your_token")
+if not NEWS_RSS_URL:
+    raise ValueError(
+        "NEWS_RSS_URL не найден в .env. Укажите URL RSS с новостями (например с лимитом 20). "
+        "Бот рассылает только категории «Аспирантура» и «Деканат»."
+    )
 
 # Путь к БД (можно задать через переменную окружения)
 DB_PATH = os.getenv('DB_PATH', config.get('DB_PATH', 'data/bot.db'))
@@ -36,21 +64,42 @@ dp = Dispatcher()
 # Команды бота
 @dp.message(Command(BotCommand(command='start', description='Начать работу с ботом')))
 async def handle_start_command(message: types.Message) -> None:
-    """Обрабатывает команду /start."""
+    """
+    Обрабатывает команду /start.
+
+    В личном чате отправляет приветствие и список команд (/code, /settopic).
+    В группах не реагирует отдельно (обработчик на команду с description).
+
+    Args:
+        message: Входящее сообщение с командой.
+
+    Returns:
+        None.
+    """
     if message.chat.type == ChatType.PRIVATE:
         await message.answer(
             "👋 Привет! Я бот для рассылки новостей деканата МГТУ СТАНКИН.\n\n"
             "📢 Добавьте меня в группу, чтобы получать актуальные новости.\n\n"
             "📌 Доступные команды:\n"
-            "/code — ссылка на исходный код\n"
-            "/settopic — настроить топик для новостей (только в супергруппах)"
+            "/code – ссылка на исходный код\n"
+            "/settopic – настроить топик для новостей (только в супергруппах)"
         )
         logger.info(f"Отправлено приветствие пользователю {message.from_user.id}")
 
 
 @dp.message(Command(BotCommand(command='code', description='Получить ссылку на GitHub репозиторий бота')))
 async def handle_code_command(message: types.Message) -> None:
-    """Обрабатывает команду /code и отправляет ссылку на GitHub репозиторий."""
+    """
+    Обрабатывает команду /code: отправляет ссылку на исходный код бота.
+
+    Отвечает только в личном чате. Ссылка захардкожена (репозиторий stankin_dean_news_bot).
+
+    Args:
+        message: Входящее сообщение.
+
+    Returns:
+        None.
+    """
     github_link = "https://github.com/overklassniy/stankin_dean_news_bot"
     try:
         if message.chat.type == ChatType.PRIVATE:
@@ -63,11 +112,19 @@ async def handle_code_command(message: types.Message) -> None:
 @dp.message(Command(BotCommand(command='settopic', description='Установить топик для новостей (в супергруппах)')))
 async def handle_settopic_command(message: types.Message, bot: Bot) -> None:
     """
-    Обрабатывает команду /settopic для установки топика в супергруппе.
-    
-    Использование:
-    - /settopic - установить текущий топик (отправить команду в нужном топике)
-    - /settopic 0 или /settopic off - отключить топик
+    Обрабатывает команду /settopic: привязывает рассылку новостей к топику супергруппы.
+
+    Работает только в супергруппах; только администраторы могут менять настройку.
+    Алгоритм: проверка типа чата и прав → наличие группы в БД → разбор аргументов.
+    /settopic без аргументов – взять текущий message_thread_id как топик; /settopic off – сброс;
+    /settopic <id> – явный ID топика. Результат пишется в БД через db.set_topic.
+
+    Args:
+        message: Входящее сообщение с командой и опциональным аргументом.
+        bot: Экземпляр бота (для get_chat_member).
+
+    Returns:
+        None.
     """
     chat = message.chat
     
@@ -124,14 +181,27 @@ async def handle_settopic_command(message: types.Message, bot: Bot) -> None:
             "ℹ️ Использование команды:\n"
             "• Отправьте /settopic в нужном топике\n"
             "• Или используйте /settopic <id> для указания ID топика\n"
-            "• /settopic off — отключить топик"
+            "• /settopic off – отключить топик"
         )
 
 
 # Обработчики событий чата
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
 async def bot_added(event: ChatMemberUpdated, bot: Bot) -> None:
-    """Добавляет чат в список рассылки, когда бот добавлен в группу."""
+    """
+    Обрабатывает добавление бота в группу: регистрирует чат и отправляет приветствие.
+
+    Проверяет, что именно бот был добавлен (new_chat_member.user.id == bot.id).
+    Добавляет chat_id в БД через db.add_group с флагом is_supergroup. В супергруппах
+    в приветствии упоминается команда /settopic.
+
+    Args:
+        event: Событие изменения my_chat_member (переход в статус member).
+        bot: Экземпляр бота.
+
+    Returns:
+        None.
+    """
     if event.new_chat_member.user.id != bot.id:
         return
     
@@ -157,7 +227,19 @@ async def bot_added(event: ChatMemberUpdated, bot: Bot) -> None:
 
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
 async def bot_kicked(event: ChatMemberUpdated, bot: Bot) -> None:
-    """Удаляет чат из списка рассылки, когда бот удалён из группы."""
+    """
+    Обрабатывает удаление бота из группы: убирает чат из рассылки.
+
+    Проверяет, что ушёл именно бот; вызывает db.remove_group(chat_id). Дальнейшие
+    новости в этот чат не отправляются.
+
+    Args:
+        event: Событие изменения my_chat_member (уход из чата).
+        bot: Экземпляр бота.
+
+    Returns:
+        None.
+    """
     if event.new_chat_member.user.id != bot.id:
         return
     
@@ -171,7 +253,18 @@ async def bot_kicked(event: ChatMemberUpdated, bot: Bot) -> None:
 # Обработчик личных сообщений
 @dp.message(F.chat.type == ChatType.PRIVATE)
 async def handle_private_message(message: types.Message) -> None:
-    """Обрабатывает личные сообщения пользователей (кроме команд)."""
+    """
+    Обрабатывает личные сообщения, не являющиеся командами.
+
+    Команды (текст, начинающийся с /) не обрабатываются. Отправляет короткое
+    приглашение добавить бота в группу и ссылку на /code.
+
+    Args:
+        message: Входящее личное сообщение.
+
+    Returns:
+        None.
+    """
     # Пропускаем команды
     if message.text and message.text.startswith('/'):
         return
@@ -191,9 +284,17 @@ async def handle_private_message(message: types.Message) -> None:
 # Фоновые задачи
 async def check_news_periodically(bot: Bot) -> None:
     """
-    Периодически проверяет наличие новых новостей и отправляет их в группы.
-    
-    Запускается как фоновая задача при старте бота.
+    Фоновая задача: периодически загружает RSS и рассылает новые новости.
+
+    В бесконечном цикле: fetch_news() → send_news_to_groups(bot, news_list, DB_PATH).
+    Интервал задаётся config['SLEEP_TIME'] (по умолчанию 360 сек). Каждые 100 итераций
+    вызывается db.cleanup_old_news(keep_count=500) для очистки старых записей sent_news.
+
+    Args:
+        bot: Экземпляр Bot для отправки сообщений.
+
+    Returns:
+        Не возвращается (бесконечный цикл).
     """
     sleep_time = config.get('SLEEP_TIME', 360)
     cleanup_interval = 100  # Очищать старые записи каждые N проверок
@@ -223,7 +324,19 @@ async def check_news_periodically(bot: Bot) -> None:
 
 
 async def migrate_data_if_needed() -> None:
-    """Мигрирует данные из JSON файлов, если они существуют."""
+    """
+    Запускает миграцию из старых JSON-файлов в SQLite, если они есть.
+
+    Проверяет наличие groups.json и last_news_id.json (пути из config). Если хотя бы
+    один есть – вызывает db.migrate_from_json. После миграции переименовывает .json
+    в .json.bak, чтобы не мигрировать повторно.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
     groups_file = config.get('GROUPS_FILE', 'data/groups.json')
     last_news_file = config.get('LAST_NEWS_ID_FILE', 'data/last_news_id.json')
     
@@ -244,15 +357,47 @@ async def migrate_data_if_needed() -> None:
 
 
 async def main() -> None:
-    """Главная функция запуска бота."""
+    """
+    Точка входа: инициализация БД, миграция, создание бота и запуск polling.
+
+    Последовательность: init_db → migrate_data_if_needed → создание Bot (с прокси или
+    BOT_API_BASE_URL при необходимости) → get_me → запуск check_news_periodically в фоне →
+    dp.start_polling. В finally закрывается сессия бота.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
     # Инициализация БД
     await db.init_db(DB_PATH)
     
     # Миграция данных из JSON (если есть)
     await migrate_data_if_needed()
     
-    # Создание бота
-    bot = Bot(token=TOKEN)
+    # Создание бота: HTTP/SOCKS прокси или MTProto (локальный Bot API сервер)
+    if _is_mtproto_proxy(PROXY_URL):
+        if not BOT_API_BASE_URL:
+            raise ValueError(
+                "Для MTProto (PROXY_URL=mtproto://...) нужен локальный Bot API сервер. "
+                "Запустите сервер (например TDLight) с этим MTProxy и задайте в .env: BOT_API_BASE_URL=http://host:port"
+            )
+        api = TelegramAPIServer.from_base(BOT_API_BASE_URL)
+        session = AiohttpSession(api=api)
+        bot = Bot(token=TOKEN, session=session)
+        logger.info("Используется MTProto: запросы к локальному Bot API серверу %s", BOT_API_BASE_URL)
+    elif PROXY_URL:
+        session = AiohttpSession(proxy=PROXY_URL)
+        bot = Bot(token=TOKEN, session=session)
+        logger.info("Используется прокси для запросов к Telegram API (HTTP/SOCKS)")
+    elif BOT_API_BASE_URL:
+        api = TelegramAPIServer.from_base(BOT_API_BASE_URL)
+        session = AiohttpSession(api=api)
+        bot = Bot(token=TOKEN, session=session)
+        logger.info("Используется свой Bot API сервер: %s", BOT_API_BASE_URL)
+    else:
+        bot = Bot(token=TOKEN)
     
     # Получаем информацию о боте
     bot_info = await bot.get_me()

@@ -20,10 +20,16 @@ DB_PATH = "data/bot.db"
 
 async def init_db(db_path: Optional[str] = None) -> None:
     """
-    Инициализирует базу данных и создаёт необходимые таблицы.
-    
+    Инициализирует базу данных и создаёт необходимые таблицы, если их ещё нет.
+
+    Создаёт директорию для файла БД при необходимости. Таблицы: groups (chat_id, topic_id,
+    is_supergroup, added_at), sent_news (news_id, sent_at). Используется CREATE TABLE IF NOT EXISTS.
+
     Args:
-        db_path: Путь к файлу базы данных. Если None, используется DB_PATH.
+        db_path: Путь к файлу SQLite. Если None, используется DB_PATH.
+
+    Returns:
+        None.
     """
     path = db_path or DB_PATH
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -47,27 +53,21 @@ async def init_db(db_path: Optional[str] = None) -> None:
             )
         """)
         
-        # Таблица настроек (для хранения last_news_id и других параметров)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        
         await db.commit()
         logger.info(f"База данных инициализирована: {path}")
 
 
 async def get_db_connection(db_path: Optional[str] = None) -> aiosqlite.Connection:
     """
-    Создаёт и возвращает соединение с базой данных.
-    
+    Создаёт и возвращает асинхронное соединение с SQLite.
+
+    Вызывающий код должен сам закрывать соединение после использования.
+
     Args:
-        db_path: Путь к файлу базы данных.
-    
+        db_path: Путь к файлу БД. Если None – DB_PATH.
+
     Returns:
-        Соединение с базой данных.
+        Открытое соединение aiosqlite.Connection.
     """
     path = db_path or DB_PATH
     return await aiosqlite.connect(path)
@@ -77,15 +77,18 @@ async def get_db_connection(db_path: Optional[str] = None) -> aiosqlite.Connecti
 
 async def add_group(chat_id: int, is_supergroup: bool = False, db_path: Optional[str] = None) -> bool:
     """
-    Добавляет группу в базу данных.
-    
+    Регистрирует группу (чат) для рассылки новостей.
+
+    Вставляет запись в таблицу groups. При дубликате chat_id (IntegrityError)
+    вставка игнорируется.
+
     Args:
-        chat_id: ID чата/группы.
-        is_supergroup: Является ли чат супергруппой.
-        db_path: Путь к файлу базы данных.
-    
+        chat_id: ID чата/группы Telegram.
+        is_supergroup: True, если чат – супергруппа (для топиков).
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        True если группа добавлена, False если уже существует.
+        True, если группа добавлена; False, если уже существовала.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -104,14 +107,16 @@ async def add_group(chat_id: int, is_supergroup: bool = False, db_path: Optional
 
 async def remove_group(chat_id: int, db_path: Optional[str] = None) -> bool:
     """
-    Удаляет группу из базы данных.
-    
+    Удаляет группу из списка рассылки.
+
+    Выполняет DELETE FROM groups WHERE chat_id = ?.
+
     Args:
         chat_id: ID чата/группы.
-        db_path: Путь к файлу базы данных.
-    
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        True если группа удалена, False если не существовала.
+        True, если была удалена хотя бы одна запись; иначе False.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -125,13 +130,16 @@ async def remove_group(chat_id: int, db_path: Optional[str] = None) -> bool:
 
 async def get_all_groups(db_path: Optional[str] = None) -> list[dict]:
     """
-    Получает список всех групп из базы данных.
-    
+    Возвращает все зарегистрированные группы для рассылки.
+
+    Выбирает chat_id, topic_id, is_supergroup из таблицы groups. Результат – список
+    словарей, пригодный для итерации при отправке новостей.
+
     Args:
-        db_path: Путь к файлу базы данных.
-    
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        Список словарей с информацией о группах.
+        Список dict с ключами chat_id, topic_id, is_supergroup.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -145,15 +153,18 @@ async def get_all_groups(db_path: Optional[str] = None) -> list[dict]:
 
 async def set_topic(chat_id: int, topic_id: Optional[int], db_path: Optional[str] = None) -> bool:
     """
-    Устанавливает топик для супергруппы.
-    
+    Устанавливает или сбрасывает топик для супергруппы.
+
+    Обновляет поле topic_id в таблице groups для данного chat_id. topic_id=None
+    отключает топик (новости идут в основной чат).
+
     Args:
         chat_id: ID чата/супергруппы.
-        topic_id: ID топика (None для отключения).
-        db_path: Путь к файлу базы данных.
-    
+        topic_id: ID топика или None.
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        True если топик установлен, False если группа не найдена.
+        True, если обновлена хотя бы одна строка; False, если группа не найдена.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -170,14 +181,14 @@ async def set_topic(chat_id: int, topic_id: Optional[int], db_path: Optional[str
 
 async def get_group(chat_id: int, db_path: Optional[str] = None) -> Optional[dict]:
     """
-    Получает информацию о группе.
-    
+    Возвращает данные одной группы по chat_id.
+
     Args:
         chat_id: ID чата/группы.
-        db_path: Путь к файлу базы данных.
-    
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        Словарь с информацией о группе или None.
+        Словарь с ключами chat_id, topic_id, is_supergroup или None, если группа не найдена.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -192,15 +203,15 @@ async def get_group(chat_id: int, db_path: Optional[str] = None) -> Optional[dic
 
 async def update_group_supergroup_status(chat_id: int, is_supergroup: bool, db_path: Optional[str] = None) -> bool:
     """
-    Обновляет статус супергруппы.
-    
+    Обновляет поле is_supergroup для группы.
+
     Args:
         chat_id: ID чата.
-        is_supergroup: Новый статус.
-        db_path: Путь к файлу базы данных.
-    
+        is_supergroup: Новое значение флага супергруппы.
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        True если обновлено успешно.
+        True, если обновлена хотя бы одна строка.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -216,41 +227,39 @@ async def update_group_supergroup_status(chat_id: int, is_supergroup: bool, db_p
 
 async def is_news_sent(news_id: int, db_path: Optional[str] = None) -> bool:
     """
-    Проверяет, была ли новость уже отправлена.
-    
-    Новость считается отправленной, если:
-    - Её ID есть в таблице sent_news, ИЛИ
-    - Её ID меньше или равен максимальному ID в таблице
-      (для совместимости с миграцией из JSON)
-    
+    Проверяет, есть ли новость в таблице отправленных (дедупликация).
+
+    Выполняет SELECT по news_id в sent_news. Используется перед рассылкой, чтобы
+    не отправлять одну и ту же новость повторно.
+
     Args:
-        news_id: ID новости.
-        db_path: Путь к файлу базы данных.
-    
+        news_id: Идентификатор новости (например хэш ссылки).
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        True если новость уже отправлена.
+        True, если запись с таким news_id есть в sent_news; иначе False.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
-        # Проверяем: либо ID есть в таблице, либо ID <= max(news_id)
         cursor = await db.execute(
-            """
-            SELECT 1 FROM sent_news 
-            WHERE news_id = ? 
-               OR ? <= (SELECT MAX(news_id) FROM sent_news)
-            """,
-            (news_id, news_id)
+            "SELECT 1 FROM sent_news WHERE news_id = ?",
+            (news_id,),
         )
         return await cursor.fetchone() is not None
 
 
 async def mark_news_sent(news_id: int, db_path: Optional[str] = None) -> None:
     """
-    Отмечает новость как отправленную.
-    
+    Добавляет новость в таблицу отправленных (после успешной рассылки).
+
+    Используется INSERT OR IGNORE, чтобы повторный вызов для того же news_id не вызывал ошибку.
+
     Args:
-        news_id: ID новости.
-        db_path: Путь к файлу базы данных.
+        news_id: Идентификатор новости.
+        db_path: Путь к БД; None – DB_PATH.
+
+    Returns:
+        None.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -264,13 +273,15 @@ async def mark_news_sent(news_id: int, db_path: Optional[str] = None) -> None:
 
 async def get_max_sent_news_id(db_path: Optional[str] = None) -> Optional[int]:
     """
-    Получает максимальный ID отправленной новости.
-    
+    Возвращает максимальный news_id из таблицы sent_news.
+
+    Может использоваться для совместимости со старыми схемами или отладки.
+
     Args:
-        db_path: Путь к файлу базы данных.
-    
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        Максимальный ID или None если новостей нет.
+        Максимальный news_id или None, если записей нет.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -281,14 +292,17 @@ async def get_max_sent_news_id(db_path: Optional[str] = None) -> Optional[int]:
 
 async def cleanup_old_news(keep_count: int = 1000, db_path: Optional[str] = None) -> int:
     """
-    Очищает старые записи об отправленных новостях, оставляя последние keep_count.
-    
+    Удаляет старые записи из sent_news, оставляя последние keep_count по news_id.
+
+    Уменьшает размер таблицы при длительной работе бота. Удаляются записи с наименьшими
+    news_id (старые по времени добавления, если id растут).
+
     Args:
-        keep_count: Количество записей для сохранения.
-        db_path: Путь к файлу базы данных.
-    
+        keep_count: Сколько последних записей оставить.
+        db_path: Путь к БД; None – DB_PATH.
+
     Returns:
-        Количество удалённых записей.
+        Число удалённых строк.
     """
     path = db_path or DB_PATH
     async with aiosqlite.connect(path) as db:
@@ -307,56 +321,21 @@ async def cleanup_old_news(keep_count: int = 1000, db_path: Optional[str] = None
         return deleted
 
 
-# === Функции для работы с настройками ===
-
-async def get_setting(key: str, default: Optional[str] = None, db_path: Optional[str] = None) -> Optional[str]:
-    """
-    Получает значение настройки.
-    
-    Args:
-        key: Ключ настройки.
-        default: Значение по умолчанию.
-        db_path: Путь к файлу базы данных.
-    
-    Returns:
-        Значение настройки или default.
-    """
-    path = db_path or DB_PATH
-    async with aiosqlite.connect(path) as db:
-        cursor = await db.execute(
-            "SELECT value FROM settings WHERE key = ?",
-            (key,)
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else default
-
-
-async def set_setting(key: str, value: str, db_path: Optional[str] = None) -> None:
-    """
-    Устанавливает значение настройки.
-    
-    Args:
-        key: Ключ настройки.
-        value: Значение настройки.
-        db_path: Путь к файлу базы данных.
-    """
-    path = db_path or DB_PATH
-    async with aiosqlite.connect(path) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            (key, value)
-        )
-        await db.commit()
-
-
 async def migrate_from_json(groups_file: str, last_news_file: str, db_path: Optional[str] = None) -> None:
     """
-    Мигрирует данные из JSON файлов в SQLite.
-    
+    Переносит данные из старых JSON-файлов в SQLite (однократная миграция).
+
+    Если существует groups_file – читает список групп (формат: список chat_id или [chat_id, topic_id]),
+    вставляет их в таблицу groups с INSERT OR IGNORE. Если существует last_news_file – читает
+    last_news_id и вставляет одну запись в sent_news. Кодировки для groups: utf-8, utf-8-sig, cp1251, latin-1.
+
     Args:
-        groups_file: Путь к файлу groups.json.
-        last_news_file: Путь к файлу last_news_id.json.
-        db_path: Путь к файлу базы данных.
+        groups_file: Путь к groups.json.
+        last_news_file: Путь к last_news_id.json.
+        db_path: Путь к SQLite; None – DB_PATH.
+
+    Returns:
+        None.
     """
     import json
     from pathlib import Path
