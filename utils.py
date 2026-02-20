@@ -367,7 +367,6 @@ def _html_list_to_bullets(html_fragment: str) -> str:
     Returns:
         Тот же фрагмент с заменёнными блоками списков на строки с номерами/буллетами.
     """
-    result = []
     # Нумерованный список: <ol>...</ol>
     def replace_ol(m: re.Match) -> str:
         inner = m.group(1)
@@ -472,6 +471,7 @@ def format_news_message(news: dict, caption_limit: int = MESSAGE_LIMIT) -> tuple
     """
     title = news.get("title", "")
     link = news.get("link", "")
+    link = link.replace("https://stankin.ru/news/", "https://stankin.ru/studentam/edinyy-dekanat/news/")
     pub_date = _format_pub_date(news.get("pubDate", ""))
     header = f'<a href="{link}"><b>{title}</b></a>\n\n🗓 {pub_date}'
     if not pub_date:
